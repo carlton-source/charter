@@ -5,6 +5,15 @@ authors = []
 telemetry = false
 cache_dir = "./.cache"
 
+[[project.requirements]]
+contract_id = "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit"
+
+[[project.requirements]]
+contract_id = "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token"
+
+[[project.requirements]]
+contract_id = "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-registry"
+
 # [contracts.counter]
 # path = "contracts/counter.clar"
 # epoch = "latest"
@@ -23,12 +32,15 @@ check_checker = { trusted_sender = true, trusted_caller = false, callee_filter =
 
 [contracts.sip-010-trait]
 path = "contracts/sip-010-trait.clar"
-epoch = "3.2"
+clarity_version = 4
+epoch = "latest"
 
 [contracts.mock-sbtc]
 path = "contracts/mock-sbtc.clar"
-epoch = "3.2"
+clarity_version = 4
+epoch = "latest"
 
 [contracts.charter-pool]
 path = "contracts/charter-pool.clar"
-epoch = "3.2"
+clarity_version = 4
+epoch = "latest"

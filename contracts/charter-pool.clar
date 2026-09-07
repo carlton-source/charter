@@ -21,6 +21,11 @@
 ;;      lenders' own quotes.
 ;;   2. No liquidation. The fee is a share of arriving yield, so no obligation
 ;;      can ever exceed receipts and no position can go underwater.
+;;
+;; Clarity 4. Every outflow from the pool goes through as-contract? with an
+;; explicit allowance, so a transfer that tried to move more than the amount
+;; being claimed reverts inside the contract rather than relying on the
+;; caller to attach a post-condition.
 ;; ---------------------------------------------------------------------------
 
 (use-trait sip-010 .sip-010-trait.sip-010-trait)
@@ -37,6 +42,7 @@
 (define-constant ERR_UNEXPECTED_TOKEN  (err u208))
 (define-constant ERR_RATE_TOO_HIGH     (err u209))
 (define-constant ERR_ALREADY_FILLED    (err u210))
+(define-constant ERR_ALLOWANCE_VIOLATED (err u211))
 
 ;; --- states ---------------------------------------------------------------
 (define-constant STATE_OPEN    u0) ;; accepting quotes and charters
@@ -169,7 +175,7 @@
     (asserts! (is-eq (var-get state) STATE_OPEN) ERR_WRONG_STATE)
     (asserts! (> ustx u0) ERR_ZERO_AMOUNT)
     (asserts! (< rate-bps BPS) ERR_RATE_TOO_HIGH)
-    (try! (stx-transfer? ustx tx-sender (as-contract tx-sender)))
+    (try! (stx-transfer? ustx tx-sender current-contract))
     (map-set quotes id { lender: tx-sender, ustx: ustx, rate-bps: rate-bps, filled: false })
     (var-set next-quote-id (+ id u1))
     (ok id)))
@@ -183,7 +189,7 @@
     (asserts! (is-eq (var-get state) STATE_OPEN) ERR_WRONG_STATE)
     (asserts! (> sats u0) ERR_ZERO_AMOUNT)
     (asserts! (is-eq (contract-of token) (var-get sbtc-token)) ERR_UNEXPECTED_TOKEN)
-    (try! (contract-call? token transfer sats tx-sender (as-contract tx-sender) none))
+    (try! (contract-call? token transfer sats tx-sender current-contract none))
     (map-set charter-positions tx-sender (merge existing { sats: (+ (get sats existing) sats) }))
     (var-set total-sats (+ (var-get total-sats) sats))
     (ok true)))
@@ -244,7 +250,7 @@
     (asserts! (is-eq (var-get state) STATE_FORMED) ERR_WRONG_STATE)
     (asserts! (> sats u0) ERR_ZERO_AMOUNT)
     (asserts! (is-eq (contract-of token) (var-get sbtc-token)) ERR_UNEXPECTED_TOKEN)
-    (try! (contract-call? token transfer sats tx-sender (as-contract tx-sender) none))
+    (try! (contract-call? token transfer sats tx-sender current-contract none))
     (var-set acc-ballast-per-ustx
       (+ (var-get acc-ballast-per-ustx) (/ (* ballast-cut SCALE) (var-get filled-ustx))))
     (var-set acc-charter-per-sat
@@ -261,7 +267,9 @@
     (asserts! (is-eq (contract-of token) (var-get sbtc-token)) ERR_UNEXPECTED_TOKEN)
     (asserts! (> amount u0) ERR_NOTHING_CLAIMABLE)
     (map-set ballast-positions who (merge pos { yield-claimed: (+ (get yield-claimed pos) amount) }))
-    (try! (as-contract (contract-call? token transfer amount tx-sender who none)))
+    (unwrap! (as-contract? ((with-ft (contract-of token) "sbtc-token" amount))
+               (try! (contract-call? token transfer amount tx-sender who none)))
+             ERR_ALLOWANCE_VIOLATED)
     (ok amount)))
 
 (define-public (claim-charter-yield (token <sip-010>))
@@ -271,7 +279,9 @@
     (asserts! (is-eq (contract-of token) (var-get sbtc-token)) ERR_UNEXPECTED_TOKEN)
     (asserts! (> amount u0) ERR_NOTHING_CLAIMABLE)
     (map-set charter-positions who (merge pos { yield-claimed: (+ (get yield-claimed pos) amount) }))
-    (try! (as-contract (contract-call? token transfer amount tx-sender who none)))
+    (unwrap! (as-contract? ((with-ft (contract-of token) "sbtc-token" amount))
+               (try! (contract-call? token transfer amount tx-sender who none)))
+             ERR_ALLOWANCE_VIOLATED)
     (ok amount)))
 
 ;; Withdraw an unfilled quote's STX. Available while the bond is still open.
@@ -282,7 +292,9 @@
     (asserts! (is-eq (get lender q) who) ERR_NO_POSITION)
     (asserts! (not (get filled q)) ERR_ALREADY_FILLED)
     (map-delete quotes id)
-    (try! (as-contract (stx-transfer? (get ustx q) tx-sender who)))
+    (unwrap! (as-contract? ((with-stx (get ustx q)))
+               (try! (stx-transfer? (get ustx q) tx-sender who)))
+             ERR_ALLOWANCE_VIOLATED)
     (ok (get ustx q))))
 
 ;; --- maturity -------------------------------------------------------------
@@ -300,7 +312,9 @@
     (asserts! (is-eq (var-get state) STATE_MATURED) ERR_WRONG_STATE)
     (asserts! (not (get principal-claimed pos)) ERR_NOTHING_CLAIMABLE)
     (map-set ballast-positions who (merge pos { principal-claimed: true }))
-    (try! (as-contract (stx-transfer? (get ustx pos) tx-sender who)))
+    (unwrap! (as-contract? ((with-stx (get ustx pos)))
+               (try! (stx-transfer? (get ustx pos) tx-sender who)))
+             ERR_ALLOWANCE_VIOLATED)
     (ok (get ustx pos))))
 
 (define-public (claim-charter-principal (token <sip-010>))
@@ -310,5 +324,7 @@
     (asserts! (is-eq (contract-of token) (var-get sbtc-token)) ERR_UNEXPECTED_TOKEN)
     (asserts! (not (get principal-claimed pos)) ERR_NOTHING_CLAIMABLE)
     (map-set charter-positions who (merge pos { principal-claimed: true }))
-    (try! (as-contract (contract-call? token transfer (get sats pos) tx-sender who none)))
+    (unwrap! (as-contract? ((with-ft (contract-of token) "sbtc-token" (get sats pos)))
+               (try! (contract-call? token transfer (get sats pos) tx-sender who none)))
+             ERR_ALLOWANCE_VIOLATED)
     (ok (get sats pos))))

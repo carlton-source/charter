@@ -73,9 +73,27 @@ contract never has to value anything.
 shortfall means nothing arrives, nothing is owed and no debt accrues. No position can go underwater,
 so there is nothing to force-close. Two tests assert exactly this.
 
+## Clarity 4
+
+Built against Clarity 4 (`clarity_version = 4`, `epoch = "latest"`). Every outflow from the pool goes
+through `as-contract?` with an explicit allowance:
+
+```clarity
+(unwrap! (as-contract? ((with-ft (contract-of token) "sbtc-token" amount))
+           (try! (contract-call? token transfer amount tx-sender who none)))
+         ERR_ALLOWANCE_VIOLATED)
+```
+
+`as-contract?` replaced Clarity 1's `as-contract` in SIP-033. It switches context to the contract
+principal and then checks asset outflows against the granted allowances, reverting if any is
+exceeded. That makes the post-condition part of the contract rather than something a caller has to
+remember to attach: a payout that tried to move more than the amount being claimed fails inside the
+pool. `current-contract`, also new in Clarity 4, replaces the `(as-contract tx-sender)` idiom for
+naming the pool as a transfer recipient.
+
 ## Status
 
-Prototype. `clarinet check` passes with **zero warnings in `charter-pool`**; 12 tests pass.
+Prototype. `clarinet check` passes with **zero warnings in `charter-pool`**; 13 tests pass.
 
 ```
 clarinet check     # 3 contracts checked
@@ -89,8 +107,15 @@ npm install && npm test
 | `mock-sbtc.clar` | 8-decimal test token standing in for `sbtc-token` |
 
 `mock-sbtc` has an unrestricted `mint` and is **not for deployment** — it accounts for the only
-`clarinet check` warnings in the project. On testnet and mainnet, `set-sbtc-token` points the pool
-at the canonical `sbtc-token`.
+`clarinet check` warnings in the project. Its fungible token is deliberately named `sbtc-token` so
+the `with-ft` allowance literals are identical here and on mainnet. `set-sbtc-token` points the pool
+at the canonical contract per network:
+
+| Network | sbtc-token |
+|---|---|
+| Simnet / Devnet | `SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token` |
+| Testnet | `SN3VMHXEN64ZZF71JQ5VESXDWTR301XTTXGF4J8F1.sbtc-token` |
+| Mainnet | `SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token` |
 
 ## Known limitations
 
@@ -98,8 +123,11 @@ at the canonical `sbtc-token`.
   `minUstxForSatsAmount` from `@stacks/bitcoin-staking`, but Clarinet 3.23.2 cannot compile against
   the live Clarity 6 contracts, so the reading adapter must live outside this build. Treated as an
   open item, not a settled one.
-- **`epoch = "latest"` does not resolve in Clarinet 3.23.2** — `as-contract` comes back unresolved.
-  Contracts are pinned to `epoch = "3.2"`.
+- **Canonical sBTC is declared as a Clarinet requirement but does not resolve.** Clarinet 3.23.2
+  caches `sbtc-deposit` no matter which sBTC contract is requested — `clarinet requirements add
+  ...sbtc-token` in a clean project still fetches `sbtc-deposit` — so the local `mock-sbtc` stands in
+  for the test build. The requirements stay declared in `Clarinet.toml` for when the tooling is
+  fixed; the pool references the canonical principal via `set-sbtc-token` on real networks.
 - **Charter cannot form a mainnet bond by itself.** A pool must already be "the registered
   signer-manager for its signer key" and "on the bond's allowlist with a sufficient max-sats cap."
   Charter is built to sit in front of an existing whitelisted operator rather than to become one.

@@ -177,6 +177,31 @@ describe("charter-pool: no debt, therefore no liquidation", () => {
   });
 });
 
+describe("charter-pool: allowance-checked payouts conserve the pool", () => {
+  beforeEach(() => openPool());
+
+  it("pays out exactly what was distributed and no more", () => {
+    ok(quote(lenderA, 1_000_000, 1000));
+    ok(simnet.callPublicFn(POOL, "submit-charter", [SBTC, Cl.uint(SATS)], charterer));
+    ok(simnet.callPublicFn(POOL, "form-bond", [Cl.list([Cl.uint(0)])], deployer));
+    ok(simnet.callPublicFn(POOL, "receive-distribution", [SBTC, Cl.uint(10_000)], deployer));
+
+    // Every outflow runs through as-contract? with an explicit with-ft allowance,
+    // so a payout larger than the claim would revert inside the contract.
+    ok(simnet.callPublicFn(POOL, "claim-ballast-yield", [SBTC], lenderA));
+    ok(simnet.callPublicFn(POOL, "claim-charter-yield", [SBTC], charterer));
+
+    // Distribution fully paid out; only the charter principal remains escrowed.
+    const poolBal = simnet.callReadOnlyFn("mock-sbtc", "get-balance",
+      [Cl.contractPrincipal(deployer, "charter-pool")], deployer).result;
+    expect(poolBal).toBeOk(Cl.uint(SATS));
+
+    // And nothing is claimable twice.
+    expect(simnet.callPublicFn(POOL, "claim-ballast-yield", [SBTC], lenderA).result)
+      .toBeErr(Cl.uint(207));
+  });
+});
+
 describe("charter-pool: unfilled ballast is not trapped", () => {
   beforeEach(() => openPool());
 
