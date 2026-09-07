@@ -61,8 +61,17 @@
 (define-data-var sbtc-token principal .mock-sbtc)
 
 ;; Published by the Endowment per bond period, roughly 7 days before Day 0.
-;; uSTX required per 100 sats of committed BTC.
+;;
+;; stx-value-ratio is the STX/BTC price the period is settled at: uSTX per 100
+;; sats. It is NOT the amount to lock. minimum-stx-ratio-bps is the collateral
+;; floor applied on top of it -- 500 bps, the "5%" the docs refer to.
+;;
+;; Verified against mainnet bond 1 (the Genesis Bond): stx-value-ratio 310237,
+;; minimum-stx-ratio 500, locked 18,500,450,000 sats against 2,869,762,053,325
+;; uSTX. The formula below reproduces that to the microSTX. See
+;; scripts/verify-mainnet-parameters.sh.
 (define-data-var stx-value-ratio uint u0)
+(define-data-var minimum-stx-ratio-bps uint u500)
 
 ;; How much STX the charterer wants locked relative to the protocol minimum,
 ;; in bps. 10000 is exactly the minimum. Higher buys payment seniority: PoX-5
@@ -110,6 +119,7 @@
     clearing-rate-bps: (var-get clearing-rate-bps),
     total-distributed: (var-get total-distributed),
     stx-value-ratio: (var-get stx-value-ratio),
+    minimum-stx-ratio-bps: (var-get minimum-stx-ratio-bps),
     target-ratio-bps: (var-get target-ratio-bps)
   })
 
@@ -119,15 +129,16 @@
 
 ;; uSTX that must be locked against a given sats commitment.
 ;;
-;;   base     = sats * stx-value-ratio / 100      (protocol minimum)
-;;   required = base * target-ratio-bps / 10000   (chosen seniority)
+;;   btc-value = sats * stx-value-ratio / 100          BTC leg valued in uSTX
+;;   floor     = btc-value * minimum-stx-ratio-bps / 10000   protocol minimum
+;;   required  = floor * target-ratio-bps / 10000      chosen seniority
 ;;
-;; NOTE: the base formula mirrors minUstxForSatsAmount in
-;; @stacks/bitcoin-staking. It must be re-validated against the live PoX-5
-;; parameters before mainnet; Clarinet 3.23.2 cannot compile against those
-;; contracts locally, so the reading adapter lives outside this build.
+;; target-ratio-bps of 10000 means exactly the protocol minimum; higher
+;; over-collateralizes to buy payment priority.
 (define-read-only (required-ustx-for (sats uint))
-  (/ (* (/ (* sats (var-get stx-value-ratio)) u100) (var-get target-ratio-bps)) BPS))
+  (/ (* (/ (* (/ (* sats (var-get stx-value-ratio)) u100)
+               (var-get minimum-stx-ratio-bps)) BPS)
+        (var-get target-ratio-bps)) BPS))
 
 (define-read-only (get-ballast-claimable (who principal))
   (match (map-get? ballast-positions who) pos
@@ -141,13 +152,15 @@
 
 ;; --- configuration (operator) ---------------------------------------------
 
-(define-public (set-period-parameters (ratio uint) (target-bps uint))
+(define-public (set-period-parameters (ratio uint) (min-ratio-bps uint) (target-bps uint))
   (begin
     (asserts! (is-eq tx-sender (var-get operator)) ERR_NOT_OPERATOR)
     (asserts! (is-eq (var-get state) STATE_OPEN) ERR_WRONG_STATE)
     (asserts! (> ratio u0) ERR_ZERO_AMOUNT)
+    (asserts! (> min-ratio-bps u0) ERR_ZERO_AMOUNT)
     (asserts! (>= target-bps BPS) ERR_RATE_TOO_HIGH)
     (var-set stx-value-ratio ratio)
+    (var-set minimum-stx-ratio-bps min-ratio-bps)
     (var-set target-ratio-bps target-bps)
     (ok true)))
 

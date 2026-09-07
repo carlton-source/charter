@@ -91,9 +91,40 @@ remember to attach: a payout that tried to move more than the amount being claim
 pool. `current-contract`, also new in Clarity 4, replaces the `(as-contract tx-sender)` idiom for
 naming the pool as a transfer recipient.
 
+## Verified against mainnet
+
+The ratio math is checked against the live Genesis Bond, not inferred from prose:
+
+```
+$ ./scripts/verify-mainnet-parameters.sh
+bond 1 [upcoming]  pox=pox5
+  stx_value_ratio 310237   minimum_stx_ratio 500 bps   target_rate 300 bps
+  capacity 25,000,500,000 sats   registered 9/15
+  locked 18,500,450,000 sats against 2,869,762,053,325 uSTX
+  derived 2,869,762,053,325 uSTX
+  MATCH  (without the ratio floor: 57,395,241,066,500, 20.0x too high)
+```
+
+That last line is the finding. **`stx_value_ratio` is a price — uSTX per 100 sats — not the amount to
+lock.** The 5% the documentation refers to is a second parameter, `minimum_stx_ratio = 500` bps,
+applied on top:
+
+```
+required_ustx = sats * stx_value_ratio / 100 * minimum_stx_ratio / 10000
+```
+
+An earlier version of this contract read the docs the obvious way, omitted the floor, and demanded
+**20x too much STX** — returning a well-formed `ok` while doing it, so no type or test would have
+caught it. `required-ustx-for` now reproduces the Genesis Bond's locked STX to the microSTX, and a
+test pins that vector so the regression cannot come back.
+
+Live parameters as of the check: 250.005 BTC capacity, 185.0045 BTC already committed, **9 of 15
+allowlisted participants registered**, 3% target rate, activating at Bitcoin height 966,350
+(cycle 143).
+
 ## Status
 
-Prototype. `clarinet check` passes with **zero warnings in `charter-pool`**; 13 tests pass.
+Prototype. `clarinet check` passes with **zero warnings in `charter-pool`**; 16 tests pass.
 
 ```
 clarinet check     # 3 contracts checked
@@ -119,10 +150,12 @@ at the canonical contract per network:
 
 ## Known limitations
 
-- **The ratio formula needs validating against live PoX-5 parameters.** `required-ustx-for` mirrors
-  `minUstxForSatsAmount` from `@stacks/bitcoin-staking`, but Clarinet 3.23.2 cannot compile against
-  the live Clarity 6 contracts, so the reading adapter must live outside this build. Treated as an
-  open item, not a settled one.
+- **Period parameters are set by the operator, not read on-chain.** The values are verified against
+  mainnet by `scripts/verify-mainnet-parameters.sh`, but `set-period-parameters` still trusts the
+  operator to enter them. Reading them from PoX-5 directly is the next integration step.
+- **Rounding dust stays in the pool.** The yield accumulator divides, so each claim rounds down by at
+  most one sat. This is deliberate and asserted: total claims can never exceed what arrived, and the
+  remainder is retained rather than overdrawn.
 - **Canonical sBTC is declared as a Clarinet requirement but does not resolve.** Clarinet 3.23.2
   caches `sbtc-deposit` no matter which sBTC contract is requested — `clarinet requirements add
   ...sbtc-token` in a clean project still fetches `sbtc-deposit` — so the local `mock-sbtc` stands in
