@@ -131,23 +131,22 @@ ballast fee is about a sixth of the bond's yield, before any move in the STX pri
 
 ## Status
 
-Prototype. `clarinet check` passes with **zero warnings in `charter-pool`**; 16 tests pass.
+Prototype. `clarinet check` passes with **zero warnings**; 16 tests pass. Built with Clarinet 3.24.0.
 
 ```
-clarinet check     # 3 contracts checked
+clarinet check     # 2 contracts checked
 npm install && npm test
 ```
 
 | Contract | Role |
 |---|---|
 | `charter-pool.clar` | split-leg membership, quote fill, yield split, claims, maturity |
-| `sip-010-trait.clar` | local trait copy for the test build |
-| `mock-sbtc.clar` | 8-decimal test token standing in for `sbtc-token` |
+| `sip-010-trait.clar` | SIP-010 trait the pool takes its token through |
 
-`mock-sbtc` has an unrestricted `mint` and is **not for deployment** — it accounts for the only
-`clarinet check` warnings in the project. Its fungible token is deliberately named `sbtc-token` so
-the `with-ft` allowance literals are identical here and on mainnet. `set-sbtc-token` points the pool
-at the canonical contract per network:
+Tests run against **canonical sBTC**, not a stand-in token. `sbtc-deposit` and `sbtc-withdrawal` are
+declared as Clarinet requirements, which brings in `sbtc-token`, and simnet wallets start with 10 sBTC.
+The pool defaults to the canonical principal; `set-sbtc-token` points it elsewhere on a network where
+the principal differs:
 
 | Network | sbtc-token |
 |---|---|
@@ -163,14 +162,8 @@ at the canonical contract per network:
 - **Rounding dust stays in the pool.** The yield accumulator divides, so each claim rounds down by at
   most one sat. This is deliberate and asserted: total claims can never exceed what arrived, and the
   remainder is retained rather than overdrawn.
-- **Canonical sBTC is declared as a Clarinet requirement but does not resolve.** Clarinet 3.23.2
-  caches `sbtc-deposit` no matter which sBTC contract is requested — `clarinet requirements add
-  ...sbtc-token` in a clean project still fetches `sbtc-deposit` — so the local `mock-sbtc` stands in
-  for the test build. The requirements stay declared in `Clarinet.toml` for when the tooling is
-  fixed; the pool references the canonical principal via `set-sbtc-token` on real networks.
-- **Charter cannot form a mainnet bond by itself.** A pool must already be "the registered
-  signer-manager for its signer key" and "on the bond's allowlist with a sufficient max-sats cap."
-  Charter is built to sit in front of an existing whitelisted operator rather than to become one.
+- **Charter cannot form a mainnet bond by itself.** It joins an existing pool as a member. A live bond
+  still needs the Endowment to set up a bond and allowlist that pool, and the pool's operator to bind it.
 - **STX is held by the contract** in this prototype. Real bonds lock STX in place via PoX-5;
   aligning the two is the next integration step.
 - Single bond per deployment. Multi-bond registry is future work.

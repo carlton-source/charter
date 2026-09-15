@@ -56,9 +56,10 @@
 ;; --- configuration --------------------------------------------------------
 (define-data-var operator principal tx-sender)
 
-;; The sBTC contract this pool settles in. Checked on every token call so a
-;; caller cannot substitute a token of their own.
-(define-data-var sbtc-token principal .mock-sbtc)
+;; The sBTC contract this pool settles in, canonical sbtc-token by default.
+;; Checked on every token call so a caller cannot substitute a token of
+;; their own.
+(define-data-var sbtc-token principal 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token)
 
 ;; Published by the Endowment per bond period, roughly 7 days before Day 0.
 ;;
@@ -154,8 +155,8 @@
     (var-set minimum-stx-ratio-bps min-ratio-bps)
     (ok true)))
 
-;; Point the pool at the sBTC contract it settles in: the mock in the local
-;; test build, the canonical sbtc-token on testnet and mainnet.
+;; Point the pool at the sBTC contract for a network where the canonical
+;; principal differs. Defaults to canonical sbtc-token.
 (define-public (set-sbtc-token (token principal))
   (begin
     (asserts! (is-eq tx-sender (var-get operator)) ERR_NOT_OPERATOR)

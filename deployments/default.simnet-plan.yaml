@@ -64,9 +64,9 @@ plan:
   - id: 0
     transactions:
     - transaction-type: emulated-contract-publish
-      contract-name: sbtc-deposit
+      contract-name: sbtc-withdrawal
       emulated-sender: SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4
-      path: .cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar
+      path: .cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-withdrawal.clar
       clarity-version: 3
     epoch: '3.0'
   - id: 1
@@ -80,10 +80,5 @@ plan:
       contract-name: charter-pool
       emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
       path: contracts/charter-pool.clar
-      clarity-version: 4
-    - transaction-type: emulated-contract-publish
-      contract-name: mock-sbtc
-      emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-      path: contracts/mock-sbtc.clar
       clarity-version: 4
     epoch: '4.0'

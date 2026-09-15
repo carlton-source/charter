@@ -3,13 +3,15 @@ import { Cl } from "@stacks/transactions";
 
 const accounts = simnet.getAccounts();
 const deployer = accounts.get("deployer")!;
-const lenderA = accounts.get("wallet_1")!;   // holds STX only
-const lenderB = accounts.get("wallet_2")!;   // holds STX only
-const charterer = accounts.get("wallet_3")!; // holds sBTC only
+const lenderA = accounts.get("wallet_1")!;   // supplies STX only
+const lenderB = accounts.get("wallet_2")!;   // supplies STX only
+const charterer = accounts.get("wallet_3")!; // supplies sBTC only
 const outsider = accounts.get("wallet_4")!;
 
 const POOL = "charter-pool";
-const SBTC = Cl.contractPrincipal(deployer, "mock-sbtc");
+// Canonical sBTC. Simnet wallets start with 10 sBTC, so no minting.
+const SBTC_ADDR = "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4";
+const SBTC = Cl.contractPrincipal(SBTC_ADDR, "sbtc-token");
 
 // Live parameters from mainnet bond 1, the Genesis Bond.
 // GET https://api.hiro.so/extended/v3/staking/bonds
@@ -25,10 +27,6 @@ const claimable = (c: string, fn: string, who: string) =>
 function openPool() {
   ok(simnet.callPublicFn(POOL, "set-period-parameters",
     [Cl.uint(RATIO), Cl.uint(MIN_BPS)], deployer));
-  ok(simnet.callPublicFn("mock-sbtc", "mint",
-    [Cl.uint(1_000_000_000), Cl.principal(charterer)], deployer));
-  ok(simnet.callPublicFn("mock-sbtc", "mint",
-    [Cl.uint(1_000_000_000), Cl.principal(deployer)], deployer));
 }
 
 function quote(who: string, ustx: number, rateBps: number) {
@@ -225,7 +223,7 @@ describe("charter-pool: allowance-checked payouts conserve the pool", () => {
 
     // Distribution paid out; the charter principal plus at most a sat of
     // rounding dust remains escrowed. Dust is retained, never overdrawn.
-    const poolBal = simnet.callReadOnlyFn("mock-sbtc", "get-balance",
+    const poolBal = simnet.callReadOnlyFn(`${SBTC_ADDR}.sbtc-token`, "get-balance",
       [Cl.contractPrincipal(deployer, "charter-pool")], deployer).result as any;
     const bal = Number(poolBal.value.value);
     expect(bal).toBeGreaterThanOrEqual(SATS);

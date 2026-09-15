@@ -1,6 +1,5 @@
-;; SIP-010 fungible token trait.
-;; Local copy for the test build only; mainnet deployments remap to the
-;; canonical trait via Clarinet requirements.
+;; SIP-010 fungible token trait, deployed with charter-pool. Canonical
+;; sbtc-token conforms to it; the tests pass sBTC through it.
 
 (define-trait sip-010-trait
   (
