@@ -96,11 +96,9 @@ naming the pool as a transfer recipient.
 The ballast math is checked against every live registration, not inferred from prose:
 
 ```
-$ ./scripts/verify-mainnet-parameters.sh
+$ ./scripts/verify-mainnet-parameters.sh   # abridged
 
 bond 1 [active]  stx_value_ratio 310237  minimum_stx_ratio 500 bps  target_rate 300 bps  registered 15/15
-  pool rounding  SP8HK160YD5GHXP69VGA0TC7AQJ1X4CDW3XVERSE.sbtc-bond-staker-v1-1: +18 uSTX
-  pool rounding  SPFCGF789WX1B737VQYAQ6BG3QYVMJGPDKRKYK00.esbee-dao-bond-staker-1: +3 uSTX
   15 registrations: 13 exactly on the floor, 2 rounded up, 0 outside tolerance
   note: bond totals (23,017,037,628 sats, 3,570,465,300,381 uSTX) disagree with its own
         registrations (23,017,662,628 sats, 3,570,465,300,381 uSTX): +625,000 sats.
