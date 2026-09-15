@@ -24,22 +24,22 @@ Three consequences:
    ratio is fixed per period by the Endowment — initially 5% — and the contract rejects any lock
    below it. So a BTC holder chasing ~3% BTC yield must first buy STX worth 5% of their position and
    hold it, unpaid, for six months.
-2. **An STX holder owns the scarce input that gates bond capacity, and has no way to rent it out.**
-3. **So bonds only work for entities holding both assets** — which is why the Genesis Bond is
-   whitelisted institutions, why only ~10% of capacity is reserved for community pools, and why
-   StackingDAO's community capacity sold out.
+2. **An STX holder can supply that leg but has no way to be paid for it.** Ballast is not scarce:
+   the Genesis Bond's whole STX leg is 3.57M STX, against 441.5M STX stacked in cycle 143. What is
+   missing is a price, not a supply.
+3. **Where the legs are split today, it happens inside a single protocol.** StackingDAO's bond
+   contract pairs stBTC depositors' sBTC with STX drawn from its own reserve. Xverse's community
+   pool goes the other way: each member brings both legs, and its source says it "prevents one
+   member's deliberate STX top-up from supporting another member."
 
-There is a missing price: what it costs to rent STX as bond ballast for a term.
+There is no open, priced way to rent STX as bond ballast for a term. Charter is that.
 
-## Ballast is not a threshold, it is a priority curve
+## Why there is no option to lock extra STX
 
-The rewards contract pays bonds in **descending `stx-value-ratio` order** — most STX locked per unit
-of BTC gets paid first — and a shortfall "falls entirely on the last bonds in the order."
-
-So extra STX buys **payment seniority**, and in a shortfall the low-ratio bonds absorb the whole
-loss while high-ratio bonds are paid in full. What is actually being traded is not a compliance
-minimum but a term structure: how much yield a Bitcoin holder will surrender for how far up the
-payment queue. `target-ratio-bps` is that knob.
+An earlier version let a charterer lock more than the minimum to buy payment priority. pox-5 does not
+work that way. Its payout loop orders **bonds** by each bond's admin-set `stx-value-ratio` and pays
+rewards per sat of BTC, so extra STX inside a bond buys no priority and earns nothing. The option was
+removed, and `required-ustx-for` is now pox-5's own `min-ustx-for-sats-amount`.
 
 ## How it works
 
@@ -52,8 +52,8 @@ payment queue. `target-ratio-bps` is that knob.
 
 1. Lenders `submit-ballast-quote(ustx, rate-bps)` — locking STX and naming the share of bond yield
    they require.
-2. Charterers `submit-charter(sats)` — committing sBTC and choosing a `target-ratio-bps`, where
-   10000 is the protocol minimum and higher buys seniority.
+2. Charterers `submit-charter(token, sats)`, committing sBTC. The STX required against it is
+   pox-5's own minimum.
 3. `form-bond(quote-ids)` fills quotes cheapest-first. The caller supplies the order and the
    contract verifies it is non-decreasing — the same pattern PoX-5 uses for bond payment ordering.
    Fill stops once the required ratio is met, and **everyone filled is paid the clearing rate**, so
@@ -93,34 +93,43 @@ naming the pool as a transfer recipient.
 
 ## Verified against mainnet
 
-The ratio math is checked against the live Genesis Bond, not inferred from prose:
+The ballast math is checked against every live registration, not inferred from prose:
 
 ```
 $ ./scripts/verify-mainnet-parameters.sh
-bond 1 [upcoming]  pox=pox5
-  stx_value_ratio 310237   minimum_stx_ratio 500 bps   target_rate 300 bps
-  capacity 25,000,500,000 sats   registered 9/15
-  locked 18,500,450,000 sats against 2,869,762,053,325 uSTX
-  derived 2,869,762,053,325 uSTX
-  MATCH  (without the ratio floor: 57,395,241,066,500, 20.0x too high)
+
+bond 1 [active]  stx_value_ratio 310237  minimum_stx_ratio 500 bps  target_rate 300 bps  registered 15/15
+  pool rounding  SP8HK160YD5GHXP69VGA0TC7AQJ1X4CDW3XVERSE.sbtc-bond-staker-v1-1: +18 uSTX
+  pool rounding  SPFCGF789WX1B737VQYAQ6BG3QYVMJGPDKRKYK00.esbee-dao-bond-staker-1: +3 uSTX
+  15 registrations: 13 exactly on the floor, 2 rounded up, 0 outside tolerance
+  note: bond totals (23,017,037,628 sats, 3,570,465,300,381 uSTX) disagree with its own
+        registrations (23,017,662,628 sats, 3,570,465,300,381 uSTX): +625,000 sats.
+        API inconsistency, not a formula error.
+  yield 6.9053 BTC/yr on 230.1766 BTC, about 13,810,597 sats per distribution
+  headroom: 300 / 500 = 60% a year on the ballast's own value
 ```
 
-That last line is the finding. **`stx_value_ratio` is a price — uSTX per 100 sats — not the amount to
-lock.** The 5% the documentation refers to is a second parameter, `minimum_stx_ratio = 500` bps,
-applied on top:
+**`stx_value_ratio` is a price, uSTX per 100 sats, not the amount to lock.** The 5% the docs refer to
+is a second parameter, `minimum_stx_ratio`, applied on top. This is pox-5's own
+`min-ustx-for-sats-amount`, floor division included:
 
 ```
-required_ustx = sats * stx_value_ratio / 100 * minimum_stx_ratio / 10000
+required_ustx = stx_value_ratio * sats / 100 * minimum_stx_ratio / 10000
 ```
 
-An earlier version of this contract read the docs the obvious way, omitted the floor, and demanded
-**20x too much STX** — returning a well-formed `ok` while doing it, so no type or test would have
-caught it. `required-ustx-for` now reproduces the Genesis Bond's locked STX to the microSTX, and a
-test pins that vector so the regression cannot come back.
+An earlier version omitted the floor and demanded **20x too much STX**, returning a well-formed value
+while doing it. The check now runs per registration. Individual registrants sit exactly on the floor;
+the two sBTC pool contracts land a few uSTX above it because they round each member up. A formula
+wrong in either direction fails. Tests pin four live registrations, including both non-round pool
+positions, which is where floor and ceiling division disagree.
 
-Live parameters as of the check: 250.005 BTC capacity, 185.0045 BTC already committed, **9 of 15
-allowlisted participants registered**, 3% target rate, activating at Bitcoin height 966,350
-(cycle 143).
+The script also surfaces an inconsistency in the API itself: the bond's locked BTC total is 625,000
+sats lower than the sum of its own registrations.
+
+**Headroom.** The bond pays 3% on the BTC leg, and the ballast is 5% of that leg's value, so a
+charterer could pay up to 60% a year on the ballast's own value before the yield runs out. For scale,
+StackingDAO advertises stSTX at up to 10% APY in STX rewards. If that is a lender's alternative, the
+ballast fee is about a sixth of the bond's yield, before any move in the STX price.
 
 ## Status
 

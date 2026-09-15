@@ -22,9 +22,9 @@ const ok = (r: any) => { expect(r.result).toBeOk(expect.anything()); return r; }
 const claimable = (c: string, fn: string, who: string) =>
   Number((simnet.callReadOnlyFn(c, fn, [Cl.principal(who)], deployer).result as any).value);
 
-function openPool(targetBps = 10000) {
+function openPool() {
   ok(simnet.callPublicFn(POOL, "set-period-parameters",
-    [Cl.uint(RATIO), Cl.uint(MIN_BPS), Cl.uint(targetBps)], deployer));
+    [Cl.uint(RATIO), Cl.uint(MIN_BPS)], deployer));
   ok(simnet.callPublicFn("mock-sbtc", "mint",
     [Cl.uint(1_000_000_000), Cl.principal(charterer)], deployer));
   ok(simnet.callPublicFn("mock-sbtc", "mint",
@@ -124,6 +124,22 @@ describe("charter-pool: ratio math, pinned to mainnet", () => {
       [Cl.uint(18_500_450_000)], deployer).result as any;
     expect(wrong / BigInt(right.value)).toBe(20n);
   });
+
+  it("matches pox-5's floor on live Genesis Bond registrations", () => {
+    // [sats, uSTX pox-5 requires] from GET /extended/v3/staking/bonds/1/registrations.
+    // The first two are non-round sBTC pool positions, so floor and ceiling
+    // division give different answers; pox-5's min-ustx-for-sats-amount floors.
+    const vectors: [number, number][] = [
+      [517_841_845, 80_326_850_233],
+      [499_370_783, 77_461_646_802],
+      [15_000_000_000, 2_326_777_500_000],
+      [50_000, 7_755_925],
+    ];
+    for (const [sats, ustx] of vectors) {
+      expect(simnet.callReadOnlyFn(POOL, "required-ustx-for",
+        [Cl.uint(sats)], deployer).result).toBeUint(ustx);
+    }
+  });
 });
 
 describe("charter-pool: the protocol's constraints are enforced", () => {
@@ -144,18 +160,6 @@ describe("charter-pool: the protocol's constraints are enforced", () => {
     // ERR_INVALID_BOND_PERIOD_ORDERING check on bond payment order.
     expect(simnet.callPublicFn(POOL, "form-bond",
       [Cl.list([Cl.uint(0), Cl.uint(1)])], deployer).result).toBeErr(Cl.uint(204));
-  });
-
-  it("prices seniority: a higher target ratio demands more ballast", () => {
-    const base = simnet.callReadOnlyFn(POOL, "required-ustx-for",
-      [Cl.uint(SATS)], deployer).result;
-    expect(base).toBeUint(REQUIRED_USTX);
-
-    // 20% over the minimum buys a higher stx-value-ratio, which PoX-5 pays first.
-    ok(simnet.callPublicFn(POOL, "set-period-parameters",
-      [Cl.uint(RATIO), Cl.uint(MIN_BPS), Cl.uint(12_000)], deployer));
-    expect(simnet.callReadOnlyFn(POOL, "required-ustx-for",
-      [Cl.uint(SATS)], deployer).result).toBeUint(18_614_220_000);
   });
 
   it("rejects a substituted token", () => {

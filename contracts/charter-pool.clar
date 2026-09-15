@@ -66,19 +66,13 @@
 ;; sats. It is NOT the amount to lock. minimum-stx-ratio-bps is the collateral
 ;; floor applied on top of it -- 500 bps, the "5%" the docs refer to.
 ;;
-;; Verified against mainnet bond 1 (the Genesis Bond): stx-value-ratio 310237,
-;; minimum-stx-ratio 500, locked 18,500,450,000 sats against 2,869,762,053,325
-;; uSTX. The formula below reproduces that to the microSTX. See
-;; scripts/verify-mainnet-parameters.sh.
+;; Verified against every registration in mainnet bond 1, the Genesis Bond
+;; (stx-value-ratio 310237, minimum-stx-ratio 500): individual registrants
+;; lock exactly this floor, pool contracts a few uSTX above it from rounding
+;; each member up. See scripts/verify-mainnet-parameters.sh.
 (define-data-var stx-value-ratio uint u0)
 (define-data-var minimum-stx-ratio-bps uint u500)
 
-;; How much STX the charterer wants locked relative to the protocol minimum,
-;; in bps. 10000 is exactly the minimum. Higher buys payment seniority: PoX-5
-;; pays bonds in descending stx-value-ratio order, and a shortfall "falls
-;; entirely on the last bonds in the order". This is the knob that turns a
-;; compliance threshold into a priority curve.
-(define-data-var target-ratio-bps uint BPS)
 
 ;; --- bond state -----------------------------------------------------------
 (define-data-var state uint STATE_OPEN)
@@ -119,26 +113,24 @@
     clearing-rate-bps: (var-get clearing-rate-bps),
     total-distributed: (var-get total-distributed),
     stx-value-ratio: (var-get stx-value-ratio),
-    minimum-stx-ratio-bps: (var-get minimum-stx-ratio-bps),
-    target-ratio-bps: (var-get target-ratio-bps)
+    minimum-stx-ratio-bps: (var-get minimum-stx-ratio-bps)
   })
 
 (define-read-only (get-quote (id uint)) (map-get? quotes id))
 (define-read-only (get-ballast-position (who principal)) (map-get? ballast-positions who))
 (define-read-only (get-charter-position (who principal)) (map-get? charter-positions who))
 
-;; uSTX that must be locked against a given sats commitment.
+;; uSTX that must be locked against a given sats commitment. This is pox-5's
+;; own min-ustx-for-sats-amount, floor division included, so a bond sized here
+;; is never short of the minimum pox-5 will accept.
 ;;
-;;   btc-value = sats * stx-value-ratio / 100          BTC leg valued in uSTX
-;;   floor     = btc-value * minimum-stx-ratio-bps / 10000   protocol minimum
-;;   required  = floor * target-ratio-bps / 10000      chosen seniority
-;;
-;; target-ratio-bps of 10000 means exactly the protocol minimum; higher
-;; over-collateralizes to buy payment priority.
+;; There is deliberately no option to lock more. pox-5 orders payouts between
+;; bonds by each bond's admin-set stx-value-ratio, so extra STX inside a bond
+;; buys no payment priority. It would only be ballast earning nothing.
 (define-read-only (required-ustx-for (sats uint))
-  (/ (* (/ (* (/ (* sats (var-get stx-value-ratio)) u100)
-               (var-get minimum-stx-ratio-bps)) BPS)
-        (var-get target-ratio-bps)) BPS))
+  (/ (* (/ (* (var-get stx-value-ratio) sats) u100)
+        (var-get minimum-stx-ratio-bps))
+     BPS))
 
 (define-read-only (get-ballast-claimable (who principal))
   (match (map-get? ballast-positions who) pos
@@ -152,16 +144,14 @@
 
 ;; --- configuration (operator) ---------------------------------------------
 
-(define-public (set-period-parameters (ratio uint) (min-ratio-bps uint) (target-bps uint))
+(define-public (set-period-parameters (ratio uint) (min-ratio-bps uint))
   (begin
     (asserts! (is-eq tx-sender (var-get operator)) ERR_NOT_OPERATOR)
     (asserts! (is-eq (var-get state) STATE_OPEN) ERR_WRONG_STATE)
     (asserts! (> ratio u0) ERR_ZERO_AMOUNT)
     (asserts! (> min-ratio-bps u0) ERR_ZERO_AMOUNT)
-    (asserts! (>= target-bps BPS) ERR_RATE_TOO_HIGH)
     (var-set stx-value-ratio ratio)
     (var-set minimum-stx-ratio-bps min-ratio-bps)
-    (var-set target-ratio-bps target-bps)
     (ok true)))
 
 ;; Point the pool at the sBTC contract it settles in: the mock in the local
